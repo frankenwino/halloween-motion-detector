@@ -1,68 +1,78 @@
 # AGENTS.md
 
-<!-- tags: navigation, architecture, conventions, gotchas -->
+<!-- tags: navigation, architecture, conventions -->
 
 ## Project Overview
 
-Raspberry Pi Halloween prop: PIR sensor detects motion → plays random spooky MP3 + records video. Single-module Python app with event-driven blocking loop.
+Raspberry Pi Halloween prop: PIR sensor detects motion → plays random spooky MP3 + records video. Python 3.11+ with event-driven blocking loop and graceful degradation (audio-only if no camera).
 
-**Entry point**: `halloween_motion_detector/halloween_motion_detector.py` → `main()`
+**Entry point**: `halloween_motion_detector/__main__.py` → `main()`
+**CLI**: `halloween-motion-detector [--config PATH]`
 
 ## Directory Map
 
 ```
-halloween_motion_detector/     # Package
-├── halloween_motion_detector.py  # ALL application logic (4 functions)
-├── __init__.py                   # Version metadata only
-└── mp3/                          # 7 bundled spooky sound effects
-tests/                           # Placeholder tests (no real coverage)
-docs/                            # Sphinx docs (template stubs)
+halloween_motion_detector/     # Application package
+├── __main__.py                # Entry: parse args → config → components → run
+├── config.py                  # Config dataclass + TOML loading + validation
+├── audio.py                   # AudioPlayer: MP3 discovery + pygame playback
+├── video.py                   # VideoRecorder: picamera2, graceful degradation
+├── detector.py                # Detection loop orchestration
+└── mp3/                       # 7 bundled sound effects
+tests/                         # pytest suite (33 tests, 100% coverage)
+├── conftest.py                # Shared fixtures + hardware mocks
+├── test_config.py             # Config unit tests
+├── test_audio.py              # Audio unit tests
+├── test_video.py              # Video unit tests
+├── test_detector.py           # Detector unit tests
+└── test_integration.py        # Full-flow integration tests
 ```
 
 ## Key Entry Points
 
 | What | Where |
 |------|-------|
-| Application logic | `halloween_motion_detector/halloween_motion_detector.py` |
-| Package config | `setup.py` |
-| Dev automation | `Makefile` (targets: clean, lint, test, docs, release) |
-| Multi-env testing | `tox.ini` |
+| Application logic | `halloween_motion_detector/__main__.py` |
+| Configuration | `halloween_motion_detector/config.py` → `Config` dataclass |
+| Detection loop | `halloween_motion_detector/detector.py` → `Detector.run()` |
+| Package config | `pyproject.toml` |
+| Example config | `config.example.toml` |
 
 ## Architecture
 
-Event-driven infinite loop:
-1. `pir.wait_for_motion()` — blocks
-2. Start recording + play random MP3
-3. `pir.wait_for_no_motion()` — blocks
-4. Stop recording, sleep 15s, repeat
+Event-driven infinite loop with non-blocking I/O:
+1. `sensor.wait_for_motion()` — blocks
+2. `audio.play_random()` — non-blocking (pygame internal thread)
+3. `video.start()` — non-blocking (picamera2 internal), skipped if unavailable
+4. `sensor.wait_for_no_motion()` — blocks
+5. `video.stop()`
+6. `time.sleep(cooldown_seconds)`
+7. Repeat
 
-Hardware: PIR on BCM pin 4, PiCamera (vflip+hflip), USB speakers.
+No explicit threading/multiprocessing. Both pygame and picamera2 handle background execution internally.
 
-## Known Bugs and Gotchas
+## Degradation Behavior
 
-<!-- tags: bugs, gotchas -->
-
-- **Multiprocessing is dead code**: `camera.start_recording(path)` and `mixer.music.play()` execute immediately in a list comprehension. Their return values (`None`) are passed to `Process(target=None)`. The processes do nothing — recording/playback happen synchronously in the main process.
-- **pygame missing from install_requires**: `setup.py` declares only `gpiozero` and `picamera`. Installing the package won't pull in pygame.
-- **Path resolution uses `os.getcwd()`**: The `mp3/` and `videos/` directories are resolved relative to CWD, not the package install location. Running from a different directory will fail.
-- **No error handling**: Missing mp3 directory, empty file list, camera failures, and audio device issues all produce unhandled exceptions.
-- **picamera is deprecated**: Replaced by `picamera2` on newer Raspberry Pi OS.
+| Missing | Result |
+|---------|--------|
+| Camera | WARNING, continues audio-only |
+| MP3 files | CRITICAL, `sys.exit(1)` |
+| PIR sensor | RuntimeError on init, exits |
 
 ## Patterns That Deviate from Defaults
 
-- Uses `multiprocessing` but doesn't actually achieve parallelism (see bug above)
-- Camera is flipped both vertically and horizontally (mounted upside-down)
-- Volume hardcoded to 10 (pygame scale 0.0–1.0, so this may be out of range)
-- All configuration is hardcoded — no config file, no CLI args, no env vars
+- **Lazy import of picamera2** inside `VideoRecorder.__init__()` — allows graceful degradation without try/except at module level
+- **Camera orientation flipped** (vflip + hflip) — hardware mounted upside-down, configurable via TOML
+- **Package-relative MP3 path** — `Path(__file__).parent / "mp3"` not CWD
+- **Video output in home dir** — `~/halloween-videos/` not package directory
 
-## Config Files
+## Config System
 
-| File | Contains |
-|------|----------|
-| `setup.cfg` | bumpversion config, `[bdist_wheel] universal=1`, flake8 excludes `docs/` |
-| `tox.ini` | Test envs: py26, py27, py33, py34, py35, flake8 |
-| `Makefile` | Standard cookiecutter-pypackage targets |
-| `MANIFEST.in` | Package data inclusion rules |
+TOML file with 4 sections (`[sensor]`, `[audio]`, `[video]`, `[app]`). All fields optional — defaults used for missing values. Validation: volume 0.0–1.0, pin 0–27. Invalid TOML or out-of-range values → fatal exit.
+
+## Testing
+
+All hardware mocked at `sys.modules` level (pygame, gpiozero, picamera2 not installed in dev). Tests run anywhere without Pi hardware.
 
 ## Detailed Documentation
 

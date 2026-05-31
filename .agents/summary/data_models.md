@@ -1,53 +1,63 @@
 # Data Models
 
-## Overview
-
-This project uses simple built-in Python data types. There are no classes, ORM models, or complex data structures.
-
-## Data Structures
-
-### Video File Info Dictionary
-
-Returned by `video_file_info()`:
+## Config Dataclass
 
 ```python
-{
-    "path": str,  # Full filesystem path, e.g. "/home/pi/videos/2026-10-31_20.30.15.h264"
-    "name": str   # Filename only, e.g. "2026-10-31_20.30.15.h264"
-}
+@dataclass
+class Config:
+    pir_pin: int = 4
+    cooldown_seconds: int = 15
+    volume: float = 0.7
+    mp3_dir: Path = Path(__file__).parent / "mp3"
+    video_dir: Path = Path.home() / "halloween-videos"
+    camera_vflip: bool = True
+    camera_hflip: bool = True
+    log_level: str = "INFO"
 ```
 
-## File Formats
+## File Outputs
 
-### Input: MP3 Audio Files
-- **Location**: `halloween_motion_detector/mp3/`
-- **Format**: MPEG Audio Layer 3
-- **Naming**: Descriptive names (no strict convention)
-- **Usage**: Loaded by pygame.mixer for playback
+### Video Files
 
-### Output: Video Recordings
-- **Location**: `./videos/` (relative to CWD at runtime)
-- **Format**: H.264 raw video stream
-- **Naming convention**: `YYYY-MM-DD_HH.MM.SS.h264`
-- **Duration**: Variable — records for as long as motion is detected
+- **Location**: `{config.video_dir}/` (default: `~/halloween-videos/`)
+- **Format**: H.264 raw video
+- **Naming**: `YYYY-MM-DD_HH.MM.SS.h264`
+- **Created**: Automatically on first recording; directory created if missing
 
-## Data Flow
+### Audio Files (Input)
+
+- **Location**: `{config.mp3_dir}/` (default: package `mp3/` directory)
+- **Format**: MP3
+- **Discovery**: `Path.glob("*.mp3")`, sorted alphabetically
+- **Selection**: `random.choice()` per detection event
+
+## TOML Configuration Schema
 
 ```mermaid
-flowchart LR
-    MP3_DIR[mp3/ directory] -->|random selection| MIXER[pygame.mixer]
-    MIXER -->|audio stream| SPEAKERS[USB Speakers]
-
-    CAMERA[PiCamera] -->|h264 stream| VID_FILE[videos/timestamp.h264]
+graph LR
+    subgraph TOML["config.toml"]
+        S["[sensor]"] --> SP[pir_pin]
+        A["[audio]"] --> AV[volume]
+        A --> AM[mp3_dir]
+        V["[video]"] --> VO[output_dir]
+        V --> VF[camera_vflip]
+        V --> VH[camera_hflip]
+        AP["[app]"] --> AC[cooldown_seconds]
+        AP --> AL[log_level]
+    end
 ```
 
-## Console Output Format
+All fields are optional — missing sections or keys use `Config` defaults.
 
-The application prints timestamped status messages to stdout:
+## State
 
-```
-2026-10-31 20:30:00 - Waiting for motion.
-2026-10-31 20:30:05 - Motion detected. Recording video - 2026-10-31_20.30.05.h264
-2026-10-31 20:30:12 - Motion stopped. Finished recording video - 2026-10-31_20.30.05.h264
-2026-10-31 20:30:12 - Sleeping for 15 seconds
-```
+The application maintains minimal runtime state:
+
+| Component | State | Description |
+|-----------|-------|-------------|
+| AudioPlayer | `_mp3_files: list[Path]` | Discovered at init, immutable |
+| VideoRecorder | `_recording: bool` | Whether currently recording |
+| VideoRecorder | `_camera` | `Picamera2` instance or `None` |
+| Detector | `_sensor` | `MotionSensor` instance |
+
+No persistent state between runs. No database. No file-based state.

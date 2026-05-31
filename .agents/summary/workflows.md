@@ -1,62 +1,71 @@
 # Workflows
 
-## Main Detection Loop
+## Application Startup
 
 ```mermaid
-flowchart TD
-    START[Application Start] --> INIT[Initialize hardware]
-    INIT --> LOAD[Load random MP3]
-    LOAD --> PREP[Prepare video file path]
-    PREP --> WAIT[Wait for motion - BLOCKING]
-    WAIT --> DETECT[Motion detected]
-    DETECT --> SPAWN[Spawn processes: record + play]
-    SPAWN --> WAIT_STOP[Wait for no motion - BLOCKING]
-    WAIT_STOP --> STOP[Stop recording]
-    STOP --> SLEEP[Sleep 15 seconds]
-    SLEEP --> LOAD
-    WAIT --> |KeyboardInterrupt| SHUTDOWN[Close camera & exit]
+sequenceDiagram
+    participant CLI as __main__
+    participant CFG as Config
+    participant AP as AudioPlayer
+    participant VR as VideoRecorder
+    participant DET as Detector
+
+    CLI->>CFG: load_config(args.config)
+    CFG-->>CLI: Config instance
+    CLI->>CLI: _setup_logging(config.log_level)
+    CLI->>AP: AudioPlayer(mp3_dir, volume)
+    Note over AP: Discovers MP3s, inits mixer<br/>Fatal if no MP3s found
+    CLI->>VR: VideoRecorder(video_dir, vflip, hflip)
+    Note over VR: Tries picamera2 init<br/>Degrades if unavailable
+    CLI->>DET: Detector(config, audio, video)
+    DET->>DET: MotionSensor(pir_pin)
+    CLI->>DET: run()
 ```
 
-## Initialization Sequence
+## Detection Loop
 
-1. Create `MotionSensor(4)` — PIR on BCM pin 4
-2. Create `PiCamera()` — configure vflip=True, hflip=True
-3. Initialize `pygame.mixer` — set volume to 10
+```mermaid
+sequenceDiagram
+    participant S as PIR Sensor
+    participant D as Detector
+    participant A as AudioPlayer
+    participant V as VideoRecorder
 
-## Detection-Response Cycle (per iteration)
-
-1. **Pre-load**: Select random MP3, generate video filename
-2. **Wait**: `pir.wait_for_motion()` blocks until PIR triggers HIGH
-3. **React**: Launch camera recording and audio playback via multiprocessing
-4. **Monitor**: `pir.wait_for_no_motion()` blocks until PIR goes LOW
-5. **Stop**: `camera.stop_recording()`
-6. **Cooldown**: `time.sleep(15)` prevents rapid re-triggering
-
-## Shutdown
-
-- Triggered by `KeyboardInterrupt` (Ctrl+C)
-- Calls `camera.close()` to release hardware resource
-- Process exits
-
-## Development Workflows
-
-### Run Tests
-```bash
-make test        # or: py.test
-make test-all    # runs tox across Python versions
+    loop Forever
+        S->>D: wait_for_motion() [blocks]
+        D->>A: play_random()
+        Note over A: Non-blocking playback
+        D->>V: start()
+        Note over V: Skipped if unavailable
+        S->>D: wait_for_no_motion() [blocks]
+        D->>V: stop()
+        D->>D: sleep(cooldown_seconds)
+    end
 ```
 
-### Lint
-```bash
-make lint        # runs flake8
+## Graceful Shutdown (Ctrl+C)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant D as Detector
+    participant A as AudioPlayer
+    participant V as VideoRecorder
+
+    U->>D: KeyboardInterrupt
+    D->>A: stop()
+    D->>A: quit()
+    D->>V: close()
+    Note over V: Stops recording if active,<br/>releases camera
+    D->>D: Log "Shutdown complete"
 ```
 
-### Build Documentation
-```bash
-make docs        # Sphinx HTML docs
-```
+## Configuration Loading
 
-### Release
-```bash
-make release     # sdist + bdist_wheel upload
-```
+1. Parse `--config` CLI argument
+2. If path is None or file doesn't exist → return `Config()` with defaults
+3. If file exists → parse with `tomllib`
+4. If TOML is invalid → log error, `sys.exit(1)`
+5. Map TOML sections to Config fields (missing keys use defaults)
+6. Validate: volume 0.0–1.0, pin 0–27
+7. If validation fails → log error, `sys.exit(1)`

@@ -1,44 +1,34 @@
 # Review Notes
 
-## Consistency Check ✅
+## Consistency Check
 
-All documentation files are internally consistent:
-- Function signatures match across `components.md` and `interfaces.md`
-- Dependency information is consistent between `dependencies.md` and `architecture.md`
-- Hardware pin assignments are consistent across all files (BCM pin 4)
-- File paths and naming conventions are consistent throughout
+✅ All documentation files reference the same module structure and API signatures.
+✅ Config field names are consistent across docs.
+✅ Degradation behavior described consistently (camera optional, audio required).
 
 ## Completeness Check
 
+### Well Documented
+- Configuration system (all fields, validation, TOML format)
+- Component responsibilities and interfaces
+- Detection loop workflow
+- Error handling and degradation strategy
+- Test coverage and structure
+
 ### Gaps Identified
 
-| Area | Gap | Severity | Recommendation |
-|------|-----|----------|----------------|
-| Testing | Tests are empty placeholders — no actual test coverage | High | Write unit tests for `random_mp3()`, `video_file_info()`, `current_time()` with mocked hardware |
-| Error handling | No error handling for missing mp3/ directory, empty mp3 list, camera failures, or audio device unavailability | High | Add try/except blocks and meaningful error messages |
-| Configuration | All parameters hardcoded (pin, volume, sleep time, flip settings) | Medium | Extract to config file or CLI arguments |
-| Packaging bug | `pygame` not listed in `install_requires` | Medium | Add `pygame` to setup.py requirements |
-| Multiprocessing misuse | `camera.start_recording()` and `mixer.music.play()` return `None`, so `multiprocessing.Process(target=None)` is a no-op | High | The multiprocessing code doesn't actually parallelize anything — the calls execute inline before Process is created |
-| Deprecated dependency | `picamera` is deprecated; `picamera2` is the replacement | Low | Migrate when targeting newer Raspberry Pi OS |
-| Python version support | Classifiers list Python 2.6–3.5 but shebang is Python 3 | Low | Update classifiers to reflect actual supported versions |
-| Documentation | Sphinx docs have no actual API content (just template stubs) | Low | Run `sphinx-apidoc` and fill in docstrings |
-| MP3 path resolution | Uses `os.getcwd()` which depends on where the script is run from, not where it's installed | Medium | Use `__file__`-relative paths or `pkg_resources` |
-
-### Multiprocessing Bug Detail
-
-In `main()`:
-```python
-for f in [camera.start_recording(video_file_path), mixer.music.play()]:
-    j = multiprocessing.Process(target=f)
-```
-
-Both `camera.start_recording()` and `mixer.music.play()` are **called immediately** in the list comprehension. Their return values (`None`) are passed as `target` to `Process`. The multiprocessing code is effectively dead code — recording and playback happen synchronously in the main process.
+| Area | Gap | Recommendation |
+|------|-----|----------------|
+| Video format | No documentation on H.264 playback/conversion | Add note about converting with ffmpeg |
+| Max recording duration | No timeout on `wait_for_no_motion()` | Consider adding configurable max recording time |
+| Log file output | Logs go to stderr only | Consider adding file handler option |
+| MP3 file requirements | No docs on supported bitrates/formats | Document pygame.mixer MP3 limitations |
+| Systemd service | No docs on running as a service | Add example .service file |
 
 ## Recommendations
 
-1. **Fix the multiprocessing bug** — either wrap calls in lambdas/functions or remove multiprocessing entirely (pygame and picamera both handle async internally)
-2. **Add pygame to install_requires** in setup.py
-3. **Add error handling** for hardware initialization failures
-4. **Write actual tests** — at minimum for the utility functions
-5. **Use `__file__`-relative paths** instead of `os.getcwd()` for MP3 directory resolution
-6. **Add CLI arguments or config file** for hardware settings (pin, volume, sleep time)
+1. **Add a systemd service file** — users will want this to run on boot
+2. **Add max recording duration** — prevent infinite recordings if sensor stays triggered
+3. **Document MP3 format requirements** — pygame.mixer has limitations with certain encodings
+4. **Consider adding `--dry-run`** — useful for testing without hardware
+5. **Add `.gitignore` entry for video output** — prevent accidental commits of recordings

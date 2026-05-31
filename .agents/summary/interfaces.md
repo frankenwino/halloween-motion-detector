@@ -1,67 +1,68 @@
 # Interfaces
 
-## Overview
+## CLI Interface
 
-This project has no external APIs or network interfaces. All interfaces are internal function calls and hardware communication via Python libraries.
-
-## Internal Function Interfaces
-
-### main()
-```python
-def main() -> None
 ```
-Entry point. No parameters, no return value. Runs until KeyboardInterrupt.
-
-### random_mp3()
-```python
-def random_mp3() -> str
+halloween-motion-detector [--config PATH]
 ```
-- **Returns**: Absolute path to a randomly selected MP3 file
-- **Side effects**: None
-- **Depends on**: `mp3/` directory existing in CWD with at least one file
 
-### video_file_info()
-```python
-def video_file_info() -> dict
-```
-- **Returns**: `{"path": str, "name": str}` — full path and filename for video
-- **Side effects**: Creates `videos/` directory if missing
-- **Depends on**: Writable filesystem at CWD
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--config` | Path | None | Path to TOML configuration file |
 
-### current_time()
-```python
-def current_time() -> str
+## Configuration Interface (TOML)
+
+```toml
+[sensor]
+pir_pin = 4              # BCM pin number (0-27)
+
+[audio]
+volume = 0.7             # Float 0.0-1.0
+mp3_dir = "/path/to/mp3" # Directory containing .mp3 files
+
+[video]
+output_dir = "/path/to/videos"  # Video output directory
+camera_vflip = true
+camera_hflip = true
+
+[app]
+cooldown_seconds = 15
+log_level = "INFO"       # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
-- **Returns**: Formatted datetime string (`YYYY-MM-DD HH:MM:SS`)
-- **Side effects**: None
 
 ## Hardware Interfaces
 
-```mermaid
-sequenceDiagram
-    participant App as main()
-    participant PIR as MotionSensor(pin=4)
-    participant Cam as PiCamera
-    participant Mix as pygame.mixer
+| Device | Library | Connection | Notes |
+|--------|---------|-----------|-------|
+| PIR sensor | `gpiozero.MotionSensor` | BCM pin (default 4) | Blocking wait API |
+| Pi Camera | `picamera2.Picamera2` | CSI ribbon cable | H264 encoding, optional |
+| Speakers | `pygame.mixer` | USB or 3.5mm | Non-blocking playback |
 
-    App->>PIR: wait_for_motion()
-    PIR-->>App: motion detected
-    App->>Cam: start_recording(path)
-    App->>Mix: music.play()
-    App->>PIR: wait_for_no_motion()
-    PIR-->>App: motion stopped
-    App->>Cam: stop_recording()
+## Internal Component Interfaces
+
+### AudioPlayer
+
+```python
+AudioPlayer(mp3_dir: Path, volume: float) -> None  # Fatal if no MP3s
+AudioPlayer.play_random() -> None                   # Non-blocking
+AudioPlayer.stop() -> None
+AudioPlayer.quit() -> None
 ```
 
-## GPIO Pin Assignment
+### VideoRecorder
 
-| Pin (BCM) | Direction | Component | Library |
-|-----------|-----------|-----------|---------|
-| 4 | Input | PIR HC-SR501 | gpiozero.MotionSensor |
+```python
+VideoRecorder(video_dir: Path, vflip: bool, hflip: bool) -> None
+VideoRecorder.available -> bool        # Property
+VideoRecorder.start() -> None          # No-op if unavailable
+VideoRecorder.stop() -> None           # No-op if not recording
+VideoRecorder.close() -> None
+```
 
-## File System Interfaces
+### Detector
 
-| Path | Type | Access | Purpose |
-|------|------|--------|---------|
-| `./mp3/` | Directory | Read | Source of MP3 sound files |
-| `./videos/` | Directory | Write (auto-created) | Destination for recorded video |
+```python
+Detector(config: Config, audio: AudioPlayer, video: VideoRecorder) -> None
+Detector.run() -> None                 # Blocks until KeyboardInterrupt
+Detector.shutdown() -> None
+```

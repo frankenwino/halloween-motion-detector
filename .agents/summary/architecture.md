@@ -1,73 +1,72 @@
 # Architecture
 
-## Overview
+## Design Pattern
 
-The Halloween Motion Detector is a single-process, event-driven application designed to run continuously on a Raspberry Pi. It monitors a PIR sensor and reacts to motion by concurrently playing audio and recording video.
+Single-process application with an event-driven blocking loop. Hardware I/O is abstracted behind classes with dependency injection for testability.
 
 ## System Architecture
 
 ```mermaid
 graph TB
-    subgraph Hardware
-        PIR[PIR Sensor HC-SR501]
-        CAM[Raspberry Pi Camera v1.3]
-        SPK[USB Speakers]
+    subgraph Entry["Entry Point (__main__.py)"]
+        CLI[CLI Args] --> CFG[load_config]
+        CFG --> LOG[Setup Logging]
     end
 
-    subgraph Software
-        MAIN[main loop]
-        GPIO[gpiozero MotionSensor]
-        PICAM[picamera PiCamera]
-        PYGAME[pygame.mixer]
-        MP[multiprocessing]
+    subgraph Components["Application Components"]
+        AP[AudioPlayer]
+        VR[VideoRecorder]
+        DET[Detector]
     end
 
-    subgraph Storage
-        MP3[mp3/ folder - sound files]
-        VID[videos/ folder - recordings]
+    subgraph Hardware["Hardware Layer"]
+        PIR[PIR Sensor<br/>gpiozero]
+        CAM[Pi Camera<br/>picamera2]
+        SPK[Speakers<br/>pygame.mixer]
     end
 
-    PIR --> GPIO
-    GPIO --> MAIN
-    MAIN --> MP
-    MP --> PICAM
-    MP --> PYGAME
-    PICAM --> CAM
-    PICAM --> VID
-    PYGAME --> SPK
-    PYGAME --> MP3
+    LOG --> AP
+    LOG --> VR
+    LOG --> DET
+    DET --> AP
+    DET --> VR
+    DET --> PIR
+    AP --> SPK
+    VR --> CAM
 ```
 
-## Design Patterns
+## Concurrency Model
 
-### Event-Driven Loop
-The application uses a blocking event loop pattern:
-1. Wait for motion (`pir.wait_for_motion()`) — blocks until PIR triggers
-2. React (start recording + play sound)
-3. Wait for motion to stop (`pir.wait_for_no_motion()`) — blocks until PIR clears
-4. Cleanup and sleep
-5. Repeat
+No explicit threading or multiprocessing. Both `pygame.mixer.music.play()` and `picamera2.start_recording()` are non-blocking — they manage background execution internally. The main thread blocks only on `MotionSensor.wait_for_motion()` and `wait_for_no_motion()`.
 
-### Concurrent Execution
-Camera recording and audio playback are launched as separate processes via `multiprocessing.Process` to avoid blocking each other.
+## Degradation Strategy
 
-### Random Selection
-Each detection cycle randomly selects an MP3 from the bundled collection, providing variety in the scare experience.
+| Missing Resource | Behavior |
+|-----------------|----------|
+| Camera (picamera2) | WARNING logged, runs in audio-only mode |
+| MP3 files | CRITICAL logged, `sys.exit(1)` |
+| PIR sensor (gpiozero) | RuntimeError on init, application exits |
+| Audio device (pygame) | Error on mixer.init(), application exits |
 
-## Layers
+## Configuration Flow
 
-| Layer | Responsibility | Implementation |
-|-------|---------------|----------------|
-| Sensor | Detect motion via GPIO | gpiozero.MotionSensor (BCM pin 4) |
-| Audio | Play random spooky sound | pygame.mixer |
-| Video | Record while motion active | picamera.PiCamera |
-| Orchestration | Coordinate detection/response cycle | main() event loop |
-| Storage | Persist video recordings | File system (videos/ directory) |
+```mermaid
+flowchart LR
+    A["--config flag"] --> B{File exists?}
+    B -->|No| C[Use defaults]
+    B -->|Yes| D[Parse TOML]
+    D --> E{Valid?}
+    E -->|No| F[Exit with error]
+    E -->|Yes| G[Validate values]
+    G --> H{In range?}
+    H -->|No| F
+    H -->|Yes| I[Return Config]
+    C --> I
+```
 
-## Deployment Model
+## Key Design Decisions
 
-- Runs directly on Raspberry Pi hardware
-- Requires physical PIR sensor on GPIO pin 4 (BCM numbering)
-- Requires Raspberry Pi Camera module connected via ribbon cable
-- Requires USB speakers for audio output
-- Intended to run as a foreground process (Ctrl+C to stop)
+- **Dataclass for config**: Type-safe, immutable-ish, with field defaults
+- **Package-relative paths**: MP3 dir resolved from `__file__`, not CWD
+- **Lazy camera import**: `picamera2` imported inside `VideoRecorder.__init__` to allow graceful degradation
+- **No global state**: All components receive dependencies via constructors

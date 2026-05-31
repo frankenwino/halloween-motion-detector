@@ -2,69 +2,66 @@
 
 ## Runtime Dependencies
 
-Declared in `setup.py`:
-
-| Package | Purpose | Documentation |
-|---------|---------|---------------|
-| gpiozero | GPIO interface for PIR motion sensor | https://gpiozero.readthedocs.io |
-| picamera | Raspberry Pi camera interface | https://picamera.readthedocs.io |
-
-**Implicit runtime dependency** (not declared in setup.py):
-
-| Package | Purpose | Documentation |
-|---------|---------|---------------|
-| pygame | Audio playback via `pygame.mixer` | http://www.pygame.org/docs/ref/music.html |
-
-## Development Dependencies
-
-From `requirements_dev.txt`:
-
-| Package | Version | Purpose |
+| Package | Purpose | Used By |
 |---------|---------|---------|
-| pip | >=21.1 | Package installer |
-| bumpversion | 0.5.3 | Version bumping |
-| wheel | >=0.38.1 | Wheel building |
-| watchdog | 0.8.3 | File watching (servedocs) |
-| flake8 | 2.6.0 | Linting |
-| tox | 2.3.1 | Multi-env testing |
-| coverage | 4.1 | Code coverage |
-| Sphinx | 1.4.4 | Documentation generation |
-| pytest | 2.9.2 | Test framework |
+| `gpiozero` | PIR motion sensor interface | `detector.py` (MotionSensor) |
+| `picamera2` | Video recording (H.264) | `video.py` (Picamera2, H264Encoder) |
+| `pygame` | Audio playback (MP3) | `audio.py` (mixer) |
 
 ## Standard Library Usage
 
-| Module | Purpose |
-|--------|---------|
-| multiprocessing | Concurrent camera/audio processes |
-| os | File path operations, directory creation |
-| time | Sleep between detection cycles |
-| datetime | Timestamp generation |
-| random | Random MP3 selection |
+| Module | Purpose | Used By |
+|--------|---------|---------|
+| `tomllib` | TOML config parsing | `config.py` |
+| `argparse` | CLI argument parsing | `__main__.py` |
+| `logging` | Structured logging | All modules |
+| `dataclasses` | Config data structure | `config.py` |
+| `pathlib` | File path handling | All modules |
+| `random` | MP3 selection | `audio.py` |
+| `time` | Cooldown sleep | `detector.py` |
+| `datetime` | Video filename timestamps | `video.py` |
+| `sys` | Fatal exit | `config.py`, `audio.py` |
+
+## Development Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `pytest` | Test framework |
+| `pytest-cov` | Coverage reporting |
+| `pytest-mock` | Mock utilities |
+
+## Build System
+
+| Tool | Role |
+|------|------|
+| `hatchling` | Build backend (PEP 517) |
+| `pip` | Package installer |
+
+## Platform Dependencies
+
+| Requirement | Notes |
+|-------------|-------|
+| Raspberry Pi OS Bookworm+ | Required for picamera2 |
+| SDL2 libraries | Required by pygame (`libsdl2-dev`) |
+| Camera stack enabled | `raspi-config` → Interface Options |
+| User in `gpio`, `video`, `audio` groups | Permission requirements |
 
 ## Dependency Graph
 
 ```mermaid
 graph TD
-    APP[halloween_motion_detector.py]
-    APP --> GPIOZERO[gpiozero]
-    APP --> PICAMERA[picamera]
-    APP --> PYGAME[pygame.mixer]
-    APP --> STDLIB[Python stdlib]
+    APP[halloween-motion-detector] --> GZ[gpiozero]
+    APP --> PC[picamera2]
+    APP --> PG[pygame]
+    APP --> STD[Python 3.11+ stdlib]
 
-    GPIOZERO --> |controls| PIR[PIR Sensor GPIO]
-    PICAMERA --> |controls| CAM[Pi Camera CSI]
-    PYGAME --> |plays| AUDIO[USB Speakers]
+    STD --> TL[tomllib]
+    STD --> AP[argparse]
+    STD --> LG[logging]
+    STD --> DC[dataclasses]
+    STD --> PL[pathlib]
 
-    STDLIB --> MP[multiprocessing]
-    STDLIB --> OS[os]
-    STDLIB --> DT[datetime]
-    STDLIB --> RND[random]
-    STDLIB --> TM[time]
+    GZ --> PI[RPi.GPIO / lgpio]
+    PC --> LC[libcamera]
+    PG --> SDL[SDL2]
 ```
-
-## Notes
-
-- **pygame is missing from `setup.py` `install_requires`** — this is a bug; the package will fail to install cleanly without it
-- **picamera** is deprecated and replaced by `picamera2` for newer Raspberry Pi OS versions
-- **gpiozero** is actively maintained and the recommended GPIO library
-- All dev dependency versions are quite old (circa 2016), consistent with the cookiecutter template era
