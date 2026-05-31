@@ -1,0 +1,18 @@
+# Halloween Motion Detector Configuration
+# All values shown are defaults — only include what you want to override.
+
+[sensor]
+pir_pin = 4
+
+[audio]
+volume = 0.7
+# mp3_dir = "/home/pi/halloween-motion-detector/halloween_motion_detector/mp3"
+
+[video]
+# output_dir = "/home/pi/halloween-videos"
+camera_vflip = true
+camera_hflip = true
+
+[app]
+cooldown_seconds = 15
+log_level = "INFO"

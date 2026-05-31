@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "halloween-motion-detector"
+version = "0.2.0"
+description = "PIR motion sensor triggers spooky MP3 playback and video recording"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+authors = [{name = "Andy Browne", email = "andy.maildrop@gmail.com"}]
+keywords = ["raspberry-pi", "halloween", "motion-sensor", "pir"]
+dependencies = [
+    "gpiozero",
+    "picamera2",
+    "pygame",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+]
+
+[project.scripts]
+halloween-motion-detector = "halloween_motion_detector.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["halloween_motion_detector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["halloween_motion_detector"]
+omit = [
+    "halloween_motion_detector/halloween_motion_detector.py",
+    "halloween_motion_detector/__main__.py",
+]

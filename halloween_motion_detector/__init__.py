@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
+"""Halloween Motion Detector — PIR-triggered spooky sounds and video recording."""
 
-__author__ = 'Andy Browne'
-__email__ = 'andy.maildrop@gmail.com'
-__version__ = '0.1.0'
+__version__ = "0.2.0"
